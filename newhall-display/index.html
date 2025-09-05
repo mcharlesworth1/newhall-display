@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Hall School Calendar</title>
+    <style>
+        /* --- General Styling --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        /* --- Main Container --- */
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            text-align: center;
+            color: #c80000; /* New Hall Red */
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 2em;
+        }
+        
+        /* --- Date and Time Display --- */
+        .header-info {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #3c3c3c; /* New Hall Grey */
+        }
+        #current-date {
+            font-size: 1.4em;
+            font-weight: 500;
+            margin: 0;
+        }
+        #current-time {
+            font-size: 1.1em;
+            margin: 5px 0 0;
+        }
+
+        /* --- Events Display --- */
+        #events-container {
+            margin-top: 20px;
+        }
+
+        .event-item {
+            display: flex;
+            align-items: center;
+            background-color: #f8f9fa;
+            border-left: 5px solid #c80000; /* New Hall Red */
+            padding: 15px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .event-time {
+            font-weight: 600;
+            color: #3c3c3c; /* New Hall Grey */
+            margin-right: 20px;
+            min-width: 130px;
+            text-align: center;
+        }
+
+        .event-summary {
+            font-size: 1.1em;
+            color: #212529;
+        }
+        
+        .status-message {
+            text-align: center;
+            color: #6c757d;
+            font-size: 1.1em;
+            padding: 20px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h1>New Hall School Events 🗓️</h1>
+        <div class="header-info">
+            <h2 id="current-date"></h2>
+            <p id="current-time"></p>
+        </div>
+        
+        <div id="events-container">
+            <p class="status-message">Loading calendar...</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Element References ---
+        const eventsContainer = document.getElementById('events-container');
+
+        // --- Live Date, Time, and Auto-Fetch Script ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const dateElement = document.getElementById('current-date');
+            const timeElement = document.getElementById('current-time');
+
+            // Set the date once on load
+            const today = new Date();
+            const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            dateElement.textContent = today.toLocaleDateString('en-GB', dateOptions);
+
+            // Function to update the time every second
+            function updateTime() {
+                const now = new Date();
+                timeElement.textContent = now.toLocaleTimeString('en-GB');
+            }
+
+            updateTime(); // Run once immediately
+            setInterval(updateTime, 1000); // Then update every second
+
+            // Automatically fetch the calendar on page load
+            fetchCalendar();
+        });
+        
+        // --- Calendar Fetching Function ---
+        async function fetchCalendar() {
+    // This new URL points to the serverless function we will create
+    const fetchUrl = '/.netlify/functions/getCalendar'; 
+
+    try {
+        // The rest of the function remains identical
+        const response = await fetch(fetchUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch calendar. Status: ${response.status}`);
+        }
+        // ... leave the rest of the function as it was
+
+            try {
+                const response = await fetch(fetchUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch calendar. Status: ${response.status}`);
+                }
+                const icsData = await response.text();
+
+                const jcalData = ICAL.parse(icsData);
+                const comp = new ICAL.Component(jcalData);
+                const allEvents = comp.getAllSubcomponents('vevent');
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); 
+                
+                const tomorrow = new Date(today);
+                tomorrow.setDate(today.getDate() + 1);
+
+                const todaysEvents = [];
+
+                allEvents.forEach(eventComponent => {
+                    const event = new ICAL.Event(eventComponent);
+                    
+                    if (event.isRecurring()) {
+                        const iterator = event.iterator();
+                        let next;
+                        while ((next = iterator.next()) && next.toJSDate() < tomorrow) {
+                            const occ = event.getOccurrenceDetails(next);
+                            if (occ.startDate.toJSDate() >= today) {
+                                todaysEvents.push({
+                                    summary: event.summary,
+                                    startDate: occ.startDate.toJSDate(),
+                                    endDate: occ.endDate.toJSDate()
+                                });
+                            }
+                        }
+                    } else { 
+                        const eventStartDate = event.startDate.toJSDate();
+                        if (eventStartDate >= today && eventStartDate < tomorrow) {
+                            todaysEvents.push({
+                                summary: event.summary,
+                                startDate: eventStartDate,
+                                endDate: event.endDate.toJSDate()
+                            });
+                        }
+                    }
+                });
+
+                todaysEvents.sort((a, b) => a.startDate - b.startDate);
+                displayEvents(todaysEvents);
+
+            } catch (error) {
+                console.error("Error fetching or parsing calendar:", error);
+                eventsContainer.innerHTML = `<p class="status-message" style="color: red;">Could not load calendar. <br> Please check the URL and ensure it's a valid iCalendar link. CORS issues can also prevent loading.</p>`;
+            }
+        }
+
+        function displayEvents(events) {
+            if (events.length === 0) {
+                eventsContainer.innerHTML = `<p class="status-message">🎉 No events scheduled for today!</p>`;
+                return;
+            }
+            
+            eventsContainer.innerHTML = ''; 
+
+            events.forEach(event => {
+                const eventElement = document.createElement('div');
+                eventElement.className = 'event-item';
+                const timeString = formatEventTime(event.startDate, event.endDate);
+                
+                eventElement.innerHTML = `
+                    <div class="event-time">${timeString}</div>
+                    <div class="event-summary">${event.summary}</div>
+                `;
+                eventsContainer.appendChild(eventElement);
+            });
+        }
+        
+        function formatEventTime(start, end) {
+            const options = { hour: 'numeric', minute: '2-digit', hour12: false };
+            const startTime = start.toLocaleTimeString('en-GB', options);
+            
+            if (start.getTime() === end.getTime() || (end.getTime() - start.getTime()) >= (24 * 60 * 60 * 1000 - 1000)) {
+                 return "All-day";
+            }
+            
+            const endTime = end.toLocaleTimeString('en-GB', options);
+            return `${startTime} - ${endTime}`;
+        }
+    </script>
+</body>
+</html>
